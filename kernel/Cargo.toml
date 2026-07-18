@@ -1,0 +1,10 @@
+[package]
+name = "vain-kernel"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+limine = "0.5"
+bitflags = "2.13.1"
+vain-allocator = { path = "../libs/allocator" }
+vain-elf = { path = "../libs/elf" }

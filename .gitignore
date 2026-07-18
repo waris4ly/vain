@@ -1,0 +1,20 @@
+/target
+/iso_root
+
+# Disk images
+*.iso
+*.hdd
+*.img
+*.vdi
+*.vmdk
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and debug output
+*.log
+serial_output.log
+kernel.asm
+CONTENT.md

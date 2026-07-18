@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "kernel",
+    "libs/abi",
+    "libs/elf",
+    "libs/allocator",
+    "userspace/init",
+    "xtask",
+]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = "z"
