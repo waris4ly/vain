@@ -10,7 +10,9 @@ struct GlobalDescriptorTable {
 impl GlobalDescriptorTable {
     pub const KERNEL_CODE: u16 = 1;
     pub const KERNEL_DATA: u16 = 2;
+    #[allow(dead_code)]
     pub const USER_DATA: u16 = 3;
+    #[allow(dead_code)]
     pub const USER_CODE: u16 = 4;
     pub const TSS: u16 = 5; // Takes 2 slots (5 and 6)
 

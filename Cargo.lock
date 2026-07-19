@@ -9,6 +9,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 
 [[package]]
+name = "driver-framework"
+version = "0.1.0"
+dependencies = [
+ "libos",
+ "vain-abi",
+]
+
+[[package]]
 name = "init"
 version = "0.1.0"
 dependencies = [
@@ -29,6 +37,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af6d2ee42712e7bd2c787365cd1dab06ef59a61becbf87bec7b32b970bd2594b"
 dependencies = [
  "bitflags",
+]
+
+[[package]]
+name = "ps2-keyboard"
+version = "0.1.0"
+dependencies = [
+ "driver-framework",
+ "libos",
 ]
 
 [[package]]

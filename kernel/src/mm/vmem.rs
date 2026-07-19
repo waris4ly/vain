@@ -3,16 +3,12 @@ use crate::boot;
 use crate::mm::frame_alloc;
 use core::arch::asm;
 
-pub fn init() {
-    // The bootloader has already set up a 4-level page table for us, including a higher half direct map.
-    // For this phase, we just rely on it, but we prepare the structures for future modifications.
-}
+pub fn init() {}
 
 pub unsafe fn active_level_4_table() -> &'static mut PageTable {
     let cr3: u64;
     unsafe { asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags)) };
 
-    // The physical address of the level 4 table is in cr3 (masking out flags)
     let phys = cr3 & 0x000F_FFFF_FFFF_F000;
     let virt = phys + boot::hhdm_offset();
     unsafe { &mut *(virt as *mut PageTable) }
@@ -23,6 +19,16 @@ pub unsafe fn map_page(
     physical_address: u64,
     flags: u64,
 ) -> Result<(), &'static str> {
+    if virtual_address & 0xFFF != 0 {
+        return Err("Virtual address not page-aligned");
+    }
+    if physical_address & 0xFFF != 0 {
+        return Err("Physical address not page-aligned");
+    }
+    if physical_address & !0x000F_FFFF_FFFF_F000 != 0 {
+        return Err("Physical address out of range");
+    }
+
     let p4 = unsafe { active_level_4_table() };
     let hhdm = boot::hhdm_offset();
 
@@ -30,6 +36,10 @@ pub unsafe fn map_page(
     let p3_idx = ((virtual_address >> 30) & 0x1FF) as usize;
     let p2_idx = ((virtual_address >> 21) & 0x1FF) as usize;
     let p1_idx = ((virtual_address >> 12) & 0x1FF) as usize;
+
+    if p4_idx >= 512 || p3_idx >= 512 || p2_idx >= 512 || p1_idx >= 512 {
+        return Err("Invalid page table index");
+    }
 
     let p3 = unsafe { get_or_create_table(&mut p4.entries[p4_idx], hhdm)? };
     let p2 = unsafe { get_or_create_table(&mut p3.entries[p3_idx], hhdm)? };
@@ -95,4 +105,24 @@ pub unsafe fn is_mapped(virtual_address: u64) -> bool {
     let p1 = unsafe { &*((p2_entry.address() + hhdm) as *const PageTable) };
     let p1_entry = &p1.entries[p1_idx];
     p1_entry.is_present()
+}
+
+pub fn new_userspace_page_table() -> Result<u64, &'static str> {
+    let frame = frame_alloc::alloc_frame().ok_or("Out of memory allocating level 4 table")?;
+    let virt = frame + boot::hhdm_offset();
+    let new_p4 = unsafe { &mut *(virt as *mut PageTable) };
+    new_p4.clear();
+
+    let active_p4 = unsafe { active_level_4_table() };
+    for i in 256..512 {
+        new_p4.entries[i] = active_p4.entries[i].clone();
+    }
+
+    Ok(frame)
+}
+
+pub unsafe fn switch_page_table(cr3: u64) {
+    unsafe {
+        asm!("mov cr3, {}", in(reg) cr3, options(nostack, preserves_flags));
+    }
 }

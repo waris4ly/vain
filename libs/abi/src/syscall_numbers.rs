@@ -4,3 +4,6 @@ pub const SYS_RECV: u64 = 3;
 pub const SYS_CALL: u64 = 4;
 pub const SYS_YIELD: u64 = 5;
 pub const SYS_DEBUG_PRINT: u64 = 6;
+pub const SYS_PORT_IN: u64 = 7;
+pub const SYS_PORT_OUT: u64 = 8;
+pub const SYS_WAIT_IRQ: u64 = 9;

@@ -19,6 +19,18 @@ impl<T> Spinlock<T> {
     }
 
     pub fn lock(&self) -> SpinlockGuard<'_, T> {
+        // Save current interrupt state and disable interrupts
+        let mut rflags: u64;
+        unsafe {
+            core::arch::asm!(
+                "pushfq",
+                "pop {}",
+                "cli",
+                out(reg) rflags,
+                options(nomem, preserves_flags)
+            );
+        }
+
         while self
             .locked
             .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -26,12 +38,13 @@ impl<T> Spinlock<T> {
         {
             core::hint::spin_loop();
         }
-        SpinlockGuard { lock: self }
+        SpinlockGuard { lock: self, rflags }
     }
 }
 
 pub struct SpinlockGuard<'a, T> {
     lock: &'a Spinlock<T>,
+    rflags: u64,
 }
 
 impl<T> Deref for SpinlockGuard<'_, T> {
@@ -50,5 +63,9 @@ impl<T> DerefMut for SpinlockGuard<'_, T> {
 impl<T> Drop for SpinlockGuard<'_, T> {
     fn drop(&mut self) {
         self.lock.locked.store(false, Ordering::Release);
+        // Restore interrupt state
+        if (self.rflags & 0x200) != 0 {
+            unsafe { core::arch::asm!("sti", options(nomem, nostack)) };
+        }
     }
 }

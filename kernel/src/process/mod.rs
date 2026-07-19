@@ -4,33 +4,51 @@ use crate::mm::frame_alloc;
 use crate::mm::vmem;
 use vain_elf::{ElfParser, PT_LOAD};
 
-pub fn load_init() {
+pub fn spawn_process(module_name: &str, capabilities: alloc::vec::Vec<crate::cap::Capability>) {
     let modules_response = boot::MODULES
         .get_response()
         .expect("No modules provided by bootloader");
 
-    let mut init_module = None;
+    let mut found_module = None;
     for module in modules_response.modules() {
-        // Find the "init" module. For now, we'll just take the first one or one with "init" in the path.
-        init_module = Some(module);
-        break;
+        let path = module.path().to_str().unwrap_or("");
+        if path.contains(module_name) {
+            found_module = Some(module);
+            break;
+        }
     }
 
-    let module = init_module.expect("Init module not found");
-
-    // Limine file struct provides addr() and size() in newer versions, or base and length.
-    // We will use standard slice conversion.
+    let module = found_module.unwrap_or_else(|| panic!("Module {} not found", module_name));
     let module_data = unsafe { core::slice::from_raw_parts(module.addr(), module.size() as usize) };
+    let parser = ElfParser::new(module_data)
+        .unwrap_or_else(|| panic!("Module {} is not a valid ELF", module_name));
 
-    let parser = ElfParser::new(module_data).expect("Init module is not a valid ELF");
+    let process_cr3 = vmem::new_userspace_page_table().expect("Failed to create page table");
 
-    // Map segments
+    let old_cr3: u64;
+    unsafe {
+        core::arch::asm!("mov {}, cr3", out(reg) old_cr3, options(nomem, nostack, preserves_flags));
+        vmem::switch_page_table(process_cr3);
+    }
+
     for phdr in parser.program_headers() {
         if phdr.p_type == PT_LOAD {
             let vaddr = phdr.p_vaddr;
             let memsz = phdr.p_memsz;
             let filesz = phdr.p_filesz;
             let offset = phdr.p_offset;
+
+            if vaddr < 0x1000 {
+                panic!("Attempt to load ELF at invalid address: {:#x}", vaddr);
+            }
+
+            if offset as usize > module_data.len() {
+                panic!("ELF offset out of bounds");
+            }
+
+            if (offset as usize).saturating_add(filesz as usize) > module_data.len() {
+                panic!("ELF file size exceeds module data");
+            }
 
             crate::println!(
                 "PT_LOAD: vaddr={:#x}, offset={:#x}, filesz={:#x}, memsz={:#x}",
@@ -40,9 +58,15 @@ pub fn load_init() {
                 memsz
             );
 
-            // Page align everything
             let start_page = vaddr & !0xFFF;
-            let end_page = (vaddr + memsz + 0xFFF) & !0xFFF;
+            let end_page = match vaddr.checked_add(memsz) {
+                Some(end) => (end + 0xFFF) & !0xFFF,
+                None => panic!("ELF segment address overflow"),
+            };
+
+            if end_page >= 0x0000_8000_0000_0000 {
+                panic!("ELF segment extends into kernel space");
+            }
 
             for page_addr in (start_page..end_page).step_by(4096) {
                 unsafe {
@@ -56,7 +80,6 @@ pub fn load_init() {
                 }
             }
 
-            // Copy data if there is any
             if filesz > 0 {
                 unsafe {
                     let dest = vaddr as *mut u8;
@@ -65,7 +88,6 @@ pub fn load_init() {
                 }
             }
 
-            // Zero out the remaining BSS section
             if memsz > filesz {
                 unsafe {
                     let dest = vaddr as *mut u8;
@@ -76,10 +98,13 @@ pub fn load_init() {
         }
     }
 
-    // Allocate a 16KB user stack at a fixed address
     let user_stack_bottom = 0x700000000000u64;
     let user_stack_size = 16384u64;
-    for page_addr in (user_stack_bottom..user_stack_bottom + user_stack_size).step_by(4096) {
+    let user_stack_top = user_stack_bottom
+        .checked_add(user_stack_size)
+        .expect("User stack address overflow");
+
+    for page_addr in (user_stack_bottom..user_stack_top).step_by(4096) {
         unsafe {
             if !vmem::is_mapped(page_addr) {
                 let frame = frame_alloc::alloc_frame().expect("Out of memory for user stack");
@@ -90,14 +115,16 @@ pub fn load_init() {
             }
         }
     }
-    
-    let user_stack_top = user_stack_bottom + user_stack_size;
+
     let entry_point = parser.header().e_entry;
 
-    // Allocate 2MB heap at 0x40000000 (just like libos expects)
     let heap_bottom = 0x40000000u64;
     let heap_size = 2 * 1024 * 1024u64;
-    for page_addr in (heap_bottom..heap_bottom + heap_size).step_by(4096) {
+    let heap_end = heap_bottom
+        .checked_add(heap_size)
+        .expect("User heap address overflow");
+
+    for page_addr in (heap_bottom..heap_end).step_by(4096) {
         unsafe {
             if !vmem::is_mapped(page_addr) {
                 let frame = frame_alloc::alloc_frame().expect("Out of memory for user heap");
@@ -109,5 +136,15 @@ pub fn load_init() {
         }
     }
 
-    crate::sched::spawn_userspace_thread(10, entry_point, user_stack_top);
+    unsafe {
+        vmem::switch_page_table(old_cr3);
+    }
+
+    crate::sched::spawn_userspace_thread(
+        10,
+        entry_point,
+        user_stack_top,
+        process_cr3,
+        capabilities,
+    );
 }

@@ -53,6 +53,8 @@ unsafe extern "C" fn syscall_entry() {
         "mov qword ptr [rip + __SYSCALL_USER_RSP], rsp",
         "mov rsp, qword ptr [rip + __SYSCALL_KERNEL_RSP]",
 
+        "push qword ptr [rip + __SYSCALL_USER_RSP]",
+
         "push r11", // RFLAGS
         "push rcx", // RIP
         "push rdx",
@@ -70,7 +72,7 @@ unsafe extern "C" fn syscall_entry() {
         "mov rdi, rax",
         "call {handler}",
 
-        "pop rax",
+        "add rsp, 8",
         "pop r9",
         "pop r8",
         "pop r10",
@@ -80,7 +82,7 @@ unsafe extern "C" fn syscall_entry() {
         "pop rcx",
         "pop r11",
 
-        "mov rsp, qword ptr [rip + __SYSCALL_USER_RSP]",
+        "pop rsp",
         "sysretq",
         handler = sym syscall_handler,
     );

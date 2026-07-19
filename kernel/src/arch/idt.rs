@@ -126,11 +126,15 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: ExceptionStackFrame, e
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: ExceptionStackFrame) {
+    // crate::println!("[VAIN] Timer IRQ fired!");
     crate::arch::apic::end_of_interrupt();
     crate::sched::schedule();
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: ExceptionStackFrame) {
-    crate::console::keyboard::handle_interrupt();
+    crate::println!("[VAIN] Keyboard IRQ fired!");
+    if let Some(notif) = crate::IRQ1_NOTIFICATION.lock().as_ref() {
+        notif.signal();
+    }
     crate::arch::apic::end_of_interrupt();
 }

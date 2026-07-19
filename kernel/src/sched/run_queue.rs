@@ -30,4 +30,12 @@ impl RunQueue {
         }
         None
     }
+    pub fn has_ready_threads(&self) -> bool {
+        for i in 0..NUM_PRIORITIES {
+            if !self.queues[i].is_empty() {
+                return true;
+            }
+        }
+        false
+    }
 }

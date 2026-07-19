@@ -1,5 +1,5 @@
-[alias]
-xtask = "run --manifest-path xtask/Cargo.toml --"
+[build]
+target = "../target-specs/x86_64-vain.json"
 
 [unstable]
 build-std = ["core", "alloc"]

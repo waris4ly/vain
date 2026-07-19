@@ -6,6 +6,8 @@ members = [
     "libs/elf",
     "libs/allocator",
     "userspace/init",
+    "userspace/drivers/framework",
+    "userspace/drivers/ps2-keyboard",
     "xtask",
 ]
 

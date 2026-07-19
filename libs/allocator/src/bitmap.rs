@@ -20,24 +20,32 @@ impl<'a> BitmapAllocator<'a> {
     }
 
     pub fn mark_free(&mut self, frame: usize) {
-        if frame < self.total_frames {
-            let byte_idx = frame / 8;
-            let bit_idx = frame % 8;
-            if self.bitmap[byte_idx] & (1 << bit_idx) != 0 {
-                self.bitmap[byte_idx] &= !(1 << bit_idx);
-                self.free_frames += 1;
-            }
+        if frame >= self.total_frames {
+            return;
+        }
+        let byte_idx = frame / 8;
+        let bit_idx = frame % 8;
+        if byte_idx >= self.bitmap.len() {
+            return;
+        }
+        if self.bitmap[byte_idx] & (1 << bit_idx) != 0 {
+            self.bitmap[byte_idx] &= !(1 << bit_idx);
+            self.free_frames = self.free_frames.saturating_add(1);
         }
     }
 
     pub fn mark_used(&mut self, frame: usize) {
-        if frame < self.total_frames {
-            let byte_idx = frame / 8;
-            let bit_idx = frame % 8;
-            if self.bitmap[byte_idx] & (1 << bit_idx) == 0 {
-                self.bitmap[byte_idx] |= 1 << bit_idx;
-                self.free_frames -= 1;
-            }
+        if frame >= self.total_frames {
+            return;
+        }
+        let byte_idx = frame / 8;
+        let bit_idx = frame % 8;
+        if byte_idx >= self.bitmap.len() {
+            return;
+        }
+        if self.bitmap[byte_idx] & (1 << bit_idx) == 0 {
+            self.bitmap[byte_idx] |= 1 << bit_idx;
+            self.free_frames = self.free_frames.saturating_sub(1);
         }
     }
 
@@ -46,16 +54,22 @@ impl<'a> BitmapAllocator<'a> {
             return None;
         }
 
-        let start_idx = self.last_alloc_index;
+        let start_idx = self
+            .last_alloc_index
+            .min(self.total_frames.saturating_sub(1));
 
         for i in 0..self.total_frames {
             let idx = (start_idx + i) % self.total_frames;
             let byte_idx = idx / 8;
             let bit_idx = idx % 8;
 
+            if byte_idx >= self.bitmap.len() {
+                continue;
+            }
+
             if self.bitmap[byte_idx] & (1 << bit_idx) == 0 {
                 self.mark_used(idx);
-                self.last_alloc_index = idx;
+                self.last_alloc_index = (idx + 1) % self.total_frames;
                 return Some(idx);
             }
         }

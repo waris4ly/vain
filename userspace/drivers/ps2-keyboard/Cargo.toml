@@ -1,0 +1,8 @@
+[package]
+name = "ps2-keyboard"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libos = { path = "../../libos" }
+driver-framework = { path = "../framework" }

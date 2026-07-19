@@ -105,6 +105,26 @@ fn build() {
             .arg("x86_64-unknown-none"),
     );
 
+    eprintln!("[xtask] Building userspace/drivers/ps2-keyboard...");
+    run_checked(
+        Command::new("cargo")
+            .env(
+                "RUSTFLAGS",
+                "-C link-arg=-Tuserspace/init/linker.ld -C relocation-model=static",
+            )
+            .args(["build", "--manifest-path"])
+            .arg(
+                root.join("userspace")
+                    .join("drivers")
+                    .join("ps2-keyboard")
+                    .join("Cargo.toml")
+                    .to_str()
+                    .unwrap(),
+            )
+            .arg("--target")
+            .arg("x86_64-unknown-none"),
+    );
+
     assemble_iso(
         &root,
         &kernel_elf,
@@ -113,10 +133,15 @@ fn build() {
             .join("x86_64-unknown-none")
             .join("debug")
             .join("init"),
+        &root
+            .join("target")
+            .join("x86_64-unknown-none")
+            .join("debug")
+            .join("ps2-keyboard"),
     );
 }
 
-fn assemble_iso(root: &Path, kernel_elf: &Path, init_elf: &Path) {
+fn assemble_iso(root: &Path, kernel_elf: &Path, init_elf: &Path, ps2_keyboard_elf: &Path) {
     eprintln!("[xtask] Assembling bootable ISO...");
 
     let iso_root = root.join("iso_root");
@@ -131,6 +156,7 @@ fn assemble_iso(root: &Path, kernel_elf: &Path, init_elf: &Path) {
 
     fs::copy(kernel_elf, boot_dir.join("kernel")).expect("copy kernel binary");
     fs::copy(init_elf, boot_dir.join("init")).expect("copy init binary");
+    fs::copy(ps2_keyboard_elf, boot_dir.join("ps2-keyboard")).expect("copy ps2-keyboard binary");
     fs::copy(root.join("limine.conf"), limine_dir.join("limine.conf")).expect("copy limine.conf");
 
     let limine_share = find_limine_share();

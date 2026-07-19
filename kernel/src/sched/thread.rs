@@ -35,13 +35,13 @@ pub struct ThreadControlBlock {
     pub state: ThreadState,
     pub context: *mut ThreadContext,
     pub stack_top: u64,
+    pub cr3: u64,
     pub ipc_buffer: vain_abi::ipc_message::IpcMessage,
     pub cap_table: crate::cap::CapTable,
 }
 
 impl ThreadControlBlock {
     pub fn new(priority: u8, entry: extern "C" fn() -> !, stack_top: u64) -> Self {
-        // Prepare the initial context on the stack
         let context_ptr =
             (stack_top - core::mem::size_of::<ThreadContext>() as u64) as *mut ThreadContext;
 
@@ -53,7 +53,7 @@ impl ThreadControlBlock {
             (*context_ptr).rip = thread_startup as *const () as u64;
             (*context_ptr).rbp = 0;
             (*context_ptr).rbx = 0;
-            (*context_ptr).r12 = entry as u64; // Entry point passed in r12
+            (*context_ptr).r12 = entry as u64;
             (*context_ptr).r13 = 0;
             (*context_ptr).r14 = 0;
             (*context_ptr).r15 = 0;
@@ -65,12 +65,19 @@ impl ThreadControlBlock {
             state: ThreadState::Runnable,
             context: context_ptr,
             stack_top,
+            cr3: 0,
             ipc_buffer: vain_abi::ipc_message::IpcMessage::empty(),
             cap_table: crate::cap::CapTable::new(),
         }
     }
 
-    pub fn new_userspace(priority: u8, user_entry: u64, user_stack: u64, kernel_stack_top: u64) -> Self {
+    pub fn new_userspace(
+        priority: u8,
+        user_entry: u64,
+        user_stack: u64,
+        kernel_stack_top: u64,
+        cr3: u64,
+    ) -> Self {
         let context_ptr =
             (kernel_stack_top - core::mem::size_of::<ThreadContext>() as u64) as *mut ThreadContext;
 
@@ -81,8 +88,8 @@ impl ThreadControlBlock {
         #[unsafe(naked)]
         unsafe extern "C" fn userspace_trampoline() -> ! {
             core::arch::naked_asm!(
-                "mov rdi, r13", // user_entry
-                "mov rsi, r14", // user_stack
+                "mov rdi, r13",
+                "mov rsi, r14",
                 "jmp {transition}",
                 transition = sym crate::arch::syscall::transition_to_user
             );
@@ -104,6 +111,7 @@ impl ThreadControlBlock {
             state: ThreadState::Runnable,
             context: context_ptr,
             stack_top: kernel_stack_top,
+            cr3,
             ipc_buffer: vain_abi::ipc_message::IpcMessage::empty(),
             cap_table: crate::cap::CapTable::new(),
         }

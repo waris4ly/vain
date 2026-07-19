@@ -18,6 +18,7 @@ pub fn halt_loop() -> ! {
     }
 }
 
+#[allow(dead_code)]
 pub fn enable_interrupts() {
     unsafe {
         core::arch::asm!("sti", options(nomem, nostack));

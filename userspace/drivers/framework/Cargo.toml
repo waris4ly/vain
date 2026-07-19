@@ -1,0 +1,8 @@
+[package]
+name = "driver-framework"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libos = { path = "../../libos" }
+vain-abi = { path = "../../../libs/abi" }

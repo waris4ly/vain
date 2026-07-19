@@ -1,8 +1,8 @@
-use crate::sync::Spinlock;
-use crate::sched::thread::{ThreadControlBlock, ThreadState};
 use crate::sched;
-use alloc::collections::VecDeque;
+use crate::sched::thread::{ThreadControlBlock, ThreadState};
+use crate::sync::Spinlock;
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
 
 struct NotificationState {
     count: u64,
@@ -29,21 +29,22 @@ impl Notification {
             waiter.state = ThreadState::Runnable;
             sched::RUN_QUEUE.lock().enqueue(waiter);
         } else {
-            state.count += 1;
+            state.count = state.count.saturating_add(1);
         }
     }
 
     pub fn wait(&self) {
         let mut state = self.state.lock();
         if state.count > 0 {
-            state.count -= 1;
+            state.count = state.count.saturating_sub(1);
         } else {
             let mut current_lock = sched::CURRENT_THREAD.lock();
             let mut waiter = current_lock.take().expect("No thread to wait");
             waiter.state = ThreadState::Blocked;
-            let waiter_context_ptr = &mut waiter.context as *mut *mut crate::sched::thread::ThreadContext;
+            let waiter_context_ptr =
+                &mut waiter.context as *mut *mut crate::sched::thread::ThreadContext;
             state.waiters.push_back(waiter);
-            
+
             drop(current_lock);
             drop(state);
             sched::schedule_blocked(waiter_context_ptr);

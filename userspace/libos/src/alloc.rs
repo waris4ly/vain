@@ -1,7 +1,7 @@
 use core::alloc::{GlobalAlloc, Layout};
+use core::cell::UnsafeCell;
 use core::ptr::null_mut;
 use core::sync::atomic::{AtomicBool, Ordering};
-use core::cell::UnsafeCell;
 
 pub struct Spinlock<T> {
     locked: AtomicBool,
@@ -18,9 +18,13 @@ impl<T> Spinlock<T> {
             data: UnsafeCell::new(data),
         }
     }
-    
+
     pub fn lock(&self) -> SpinlockGuard<'_, T> {
-        while self.locked.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+        while self
+            .locked
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             core::hint::spin_loop();
         }
         SpinlockGuard { lock: self }
@@ -82,10 +86,10 @@ impl BumpAllocator {
 unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let mut inner = self.inner.lock();
-        
+
         let aligned = (inner.next + layout.align() - 1) & !(layout.align() - 1);
         let next_free = aligned + layout.size();
-        
+
         if next_free > inner.heap_end {
             null_mut()
         } else {

@@ -202,14 +202,22 @@ pub fn init() -> AcpiInfo {
         match entry_type {
             1 => {
                 // I/O APIC
-                let ioapic_addr = unsafe { *(entry_ptr.add(4) as *const u32) };
+                let ioapic_addr = unsafe { core::ptr::read_unaligned(entry_ptr.add(4) as *const u32) };
                 if ioapic_base.is_none() {
                     ioapic_base = Some(ioapic_addr as u64);
                 }
             }
+            2 => {
+                // Interrupt Source Override
+                let bus = unsafe { *entry_ptr.add(2) };
+                let source_irq = unsafe { *entry_ptr.add(3) };
+                let global_sys_interrupt = unsafe { core::ptr::read_unaligned(entry_ptr.add(4) as *const u32) };
+                let flags = unsafe { core::ptr::read_unaligned(entry_ptr.add(8) as *const u16) };
+                crate::println!("[VAIN ACPI] Override: Bus {} IRQ {} -> GSI {} (Flags {:#x})", bus, source_irq, global_sys_interrupt, flags);
+            }
             5 => {
                 // 64-bit LAPIC Base Address Override
-                let lapic_addr = unsafe { *(entry_ptr.add(4) as *const u64) };
+                let lapic_addr = unsafe { core::ptr::read_unaligned(entry_ptr.add(4) as *const u64) };
                 lapic_base = lapic_addr;
             }
             _ => {}

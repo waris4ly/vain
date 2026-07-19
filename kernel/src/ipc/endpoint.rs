@@ -1,8 +1,8 @@
-use alloc::collections::VecDeque;
-use alloc::boxed::Box;
-use crate::sync::Spinlock;
-use crate::sched::thread::{ThreadControlBlock, ThreadState};
 use crate::sched;
+use crate::sched::thread::{ThreadControlBlock, ThreadState};
+use crate::sync::Spinlock;
+use alloc::boxed::Box;
+use alloc::collections::VecDeque;
 
 struct EndpointState {
     senders: VecDeque<Box<ThreadControlBlock>>,
@@ -32,21 +32,22 @@ impl Endpoint {
             // Fast path: Copy message to receiver
             receiver.ipc_buffer = sender_thread.ipc_buffer;
             receiver.state = ThreadState::Runnable;
-            
+
             sched::RUN_QUEUE.lock().enqueue(receiver);
-            
+
             // Sender continues
             sender_thread.state = ThreadState::Runnable;
             *current_lock = Some(sender_thread);
         } else {
             // Block sender
             sender_thread.state = ThreadState::Blocked;
-            let sender_context_ptr = &mut sender_thread.context as *mut *mut crate::sched::thread::ThreadContext;
+            let sender_context_ptr =
+                &mut sender_thread.context as *mut *mut crate::sched::thread::ThreadContext;
             state.senders.push_back(sender_thread);
-            
+
             drop(current_lock);
             drop(state);
-            
+
             sched::schedule_blocked(sender_context_ptr);
         }
     }
@@ -59,21 +60,22 @@ impl Endpoint {
         if let Some(mut sender) = state.senders.pop_front() {
             // Fast path: copy from sender
             receiver_thread.ipc_buffer = sender.ipc_buffer;
-            
+
             sender.state = ThreadState::Runnable;
             sched::RUN_QUEUE.lock().enqueue(sender);
-            
+
             receiver_thread.state = ThreadState::Runnable;
             *current_lock = Some(receiver_thread);
         } else {
             // Block receiver
             receiver_thread.state = ThreadState::Blocked;
-            let receiver_context_ptr = &mut receiver_thread.context as *mut *mut crate::sched::thread::ThreadContext;
+            let receiver_context_ptr =
+                &mut receiver_thread.context as *mut *mut crate::sched::thread::ThreadContext;
             state.receivers.push_back(receiver_thread);
-            
+
             drop(current_lock);
             drop(state);
-            
+
             sched::schedule_blocked(receiver_context_ptr);
         }
     }
