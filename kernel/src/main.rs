@@ -14,6 +14,8 @@ mod mm;
 mod process;
 mod sched;
 mod sync;
+mod ipc;
+mod cap;
 
 use core::fmt::Write;
 
@@ -47,19 +49,22 @@ fn kernel_main() -> ! {
     arch::syscall::set_syscall_kernel_stack(kernel_stack_top);
     core::mem::forget(kernel_stack);
 
-    println!("[VAIN] Spawning kernel threads...");
-
-    // Spawn Thread A
+    println!("[VAIN] Spawning kernel threads for IPC test...");
+    
+    // Create an Endpoint and store it globally for the test
+    *TEST_ENDPOINT.lock() = Some(alloc::sync::Arc::new(ipc::endpoint::Endpoint::new()));
+    
+    // Spawn IPC Client (Thread A)
     let stack_a = alloc::vec::Vec::<u8>::with_capacity(16384);
     let stack_top_a = stack_a.as_ptr() as u64 + 16384;
     core::mem::forget(stack_a);
-    sched::spawn_kernel_thread(10, thread_a, stack_top_a);
-
-    // Spawn Thread B
+    sched::spawn_kernel_thread(10, ipc_client_thread, stack_top_a);
+    
+    // Spawn IPC Server (Thread B)
     let stack_b = alloc::vec::Vec::<u8>::with_capacity(16384);
     let stack_top_b = stack_b.as_ptr() as u64 + 16384;
     core::mem::forget(stack_b);
-    sched::spawn_kernel_thread(10, thread_b, stack_top_b);
+    sched::spawn_kernel_thread(10, ipc_server_thread, stack_top_b);
 
     println!("[VAIN] Starting scheduler...");
     sched::schedule();
@@ -67,23 +72,70 @@ fn kernel_main() -> ! {
     unreachable!("Scheduler should not return");
 }
 
-extern "C" fn thread_a() -> ! {
+static TEST_ENDPOINT: crate::sync::Spinlock<Option<alloc::sync::Arc<ipc::endpoint::Endpoint>>> = crate::sync::Spinlock::new(None);
+
+extern "C" fn ipc_client_thread() -> ! {
+    let endpoint = TEST_ENDPOINT.lock().as_ref().unwrap().clone();
+    
+    // Wait a bit to ensure server is ready
+    for _ in 0..1_000_000 {
+        core::hint::spin_loop();
+    }
+    
+    crate::println!("[Client] Sending message...");
+    
+    // Set up message in own TCB
+    {
+        let mut lock = sched::CURRENT_THREAD.lock();
+        let current = lock.as_mut().unwrap();
+        current.ipc_buffer.tag = 42;
+        current.ipc_buffer.data[0] = 0xDEADBEEF;
+    }
+    
+    endpoint.send();
+    
+    // Wait for reply? We didn't implement 'call' yet, so let's just recv
+    endpoint.recv();
+    
+    let reply = {
+        let mut lock = sched::CURRENT_THREAD.lock();
+        let current = lock.as_mut().unwrap();
+        current.ipc_buffer.data[0]
+    };
+    
+    crate::println!("[Client] Received reply: {:#x}", reply);
+    
     loop {
-        crate::print!("A");
-        // Waste time to slow down the loop
-        for _ in 0..10_000_000 {
-            core::hint::spin_loop();
-        }
+        core::hint::spin_loop();
     }
 }
 
-extern "C" fn thread_b() -> ! {
+extern "C" fn ipc_server_thread() -> ! {
+    let endpoint = TEST_ENDPOINT.lock().as_ref().unwrap().clone();
+    
+    crate::println!("[Server] Waiting for message...");
+    endpoint.recv();
+    
+    let msg_data = {
+        let mut lock = sched::CURRENT_THREAD.lock();
+        let current = lock.as_mut().unwrap();
+        crate::println!("[Server] Received tag: {}, data: {:#x}", current.ipc_buffer.tag, current.ipc_buffer.data[0]);
+        current.ipc_buffer.data[0]
+    };
+    
+    // Send reply
+    {
+        let mut lock = sched::CURRENT_THREAD.lock();
+        let current = lock.as_mut().unwrap();
+        current.ipc_buffer.tag = 100;
+        current.ipc_buffer.data[0] = msg_data + 1;
+    }
+    
+    crate::println!("[Server] Sending reply...");
+    endpoint.send();
+    
     loop {
-        crate::print!("B");
-        // Waste time to slow down the loop
-        for _ in 0..10_000_000 {
-            core::hint::spin_loop();
-        }
+        core::hint::spin_loop();
     }
 }
 

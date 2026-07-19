@@ -42,6 +42,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "limine",
+ "vain-abi",
  "vain-allocator",
  "vain-elf",
 ]

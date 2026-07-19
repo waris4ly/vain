@@ -8,8 +8,8 @@ use core::ptr;
 use run_queue::RunQueue;
 use thread::{ThreadContext, ThreadControlBlock};
 
-static RUN_QUEUE: Spinlock<RunQueue> = Spinlock::new(RunQueue::new());
-static CURRENT_THREAD: Spinlock<Option<Box<ThreadControlBlock>>> = Spinlock::new(None);
+pub static RUN_QUEUE: Spinlock<RunQueue> = Spinlock::new(RunQueue::new());
+pub static CURRENT_THREAD: Spinlock<Option<Box<ThreadControlBlock>>> = Spinlock::new(None);
 
 pub fn spawn_kernel_thread(priority: u8, entry: extern "C" fn() -> !, stack_top: u64) {
     let tcb = Box::new(ThreadControlBlock::new(priority, entry, stack_top));
@@ -52,5 +52,26 @@ pub fn schedule() {
         unsafe {
             context_switch::switch_context(prev_context_ptr, next_context);
         }
+    }
+}
+
+pub fn schedule_blocked(prev_context_ptr: *mut *mut ThreadContext) {
+    let mut rq = RUN_QUEUE.lock();
+    if let Some(next_thread) = rq.pick_next() {
+        let mut current_lock = CURRENT_THREAD.lock();
+        
+        let next_context = next_thread.context;
+        
+        *current_lock = Some(next_thread);
+        
+        drop(current_lock);
+        drop(rq);
+        
+        unsafe {
+            context_switch::switch_context(prev_context_ptr, next_context);
+        }
+    } else {
+        crate::println!("[VAIN PANIC] No threads in RunQueue during schedule_blocked!");
+        loop { unsafe { core::arch::asm!("hlt"); } }
     }
 }

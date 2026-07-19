@@ -34,6 +34,8 @@ pub struct ThreadControlBlock {
     pub state: ThreadState,
     pub context: *mut ThreadContext,
     pub stack_top: u64,
+    pub ipc_buffer: vain_abi::ipc_message::IpcMessage,
+    pub cap_table: crate::cap::CapTable,
 }
 
 impl ThreadControlBlock {
@@ -62,6 +64,8 @@ impl ThreadControlBlock {
             state: ThreadState::Runnable,
             context: context_ptr,
             stack_top,
+            ipc_buffer: vain_abi::ipc_message::IpcMessage::empty(),
+            cap_table: crate::cap::CapTable::new(),
         }
     }
 }
