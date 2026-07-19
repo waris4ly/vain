@@ -15,6 +15,7 @@ impl ThreadId {
 pub enum ThreadState {
     Runnable,
     Blocked,
+    Dead,
 }
 
 #[repr(C, packed)]
@@ -64,6 +65,45 @@ impl ThreadControlBlock {
             state: ThreadState::Runnable,
             context: context_ptr,
             stack_top,
+            ipc_buffer: vain_abi::ipc_message::IpcMessage::empty(),
+            cap_table: crate::cap::CapTable::new(),
+        }
+    }
+
+    pub fn new_userspace(priority: u8, user_entry: u64, user_stack: u64, kernel_stack_top: u64) -> Self {
+        let context_ptr =
+            (kernel_stack_top - core::mem::size_of::<ThreadContext>() as u64) as *mut ThreadContext;
+
+        unsafe extern "C" {
+            fn thread_startup();
+        }
+
+        #[unsafe(naked)]
+        unsafe extern "C" fn userspace_trampoline() -> ! {
+            core::arch::naked_asm!(
+                "mov rdi, r13", // user_entry
+                "mov rsi, r14", // user_stack
+                "jmp {transition}",
+                transition = sym crate::arch::syscall::transition_to_user
+            );
+        }
+
+        unsafe {
+            (*context_ptr).rip = thread_startup as *const () as u64;
+            (*context_ptr).rbp = 0;
+            (*context_ptr).rbx = 0;
+            (*context_ptr).r12 = userspace_trampoline as *const () as u64;
+            (*context_ptr).r13 = user_entry;
+            (*context_ptr).r14 = user_stack;
+            (*context_ptr).r15 = 0;
+        }
+
+        ThreadControlBlock {
+            id: ThreadId::new(),
+            priority,
+            state: ThreadState::Runnable,
+            context: context_ptr,
+            stack_top: kernel_stack_top,
             ipc_buffer: vain_abi::ipc_message::IpcMessage::empty(),
             cap_table: crate::cap::CapTable::new(),
         }

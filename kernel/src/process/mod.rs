@@ -4,7 +4,7 @@ use crate::mm::frame_alloc;
 use crate::mm::vmem;
 use vain_elf::{ElfParser, PT_LOAD};
 
-pub fn load_init() -> u64 {
+pub fn load_init() {
     let modules_response = boot::MODULES
         .get_response()
         .expect("No modules provided by bootloader");
@@ -76,5 +76,38 @@ pub fn load_init() -> u64 {
         }
     }
 
-    parser.header().e_entry
+    // Allocate a 16KB user stack at a fixed address
+    let user_stack_bottom = 0x700000000000u64;
+    let user_stack_size = 16384u64;
+    for page_addr in (user_stack_bottom..user_stack_bottom + user_stack_size).step_by(4096) {
+        unsafe {
+            if !vmem::is_mapped(page_addr) {
+                let frame = frame_alloc::alloc_frame().expect("Out of memory for user stack");
+                let flags = PageTableEntry::PRESENT
+                    | PageTableEntry::WRITABLE
+                    | PageTableEntry::USER_ACCESSIBLE;
+                vmem::map_page(page_addr, frame, flags).expect("Failed to map user stack");
+            }
+        }
+    }
+    
+    let user_stack_top = user_stack_bottom + user_stack_size;
+    let entry_point = parser.header().e_entry;
+
+    // Allocate 2MB heap at 0x40000000 (just like libos expects)
+    let heap_bottom = 0x40000000u64;
+    let heap_size = 2 * 1024 * 1024u64;
+    for page_addr in (heap_bottom..heap_bottom + heap_size).step_by(4096) {
+        unsafe {
+            if !vmem::is_mapped(page_addr) {
+                let frame = frame_alloc::alloc_frame().expect("Out of memory for user heap");
+                let flags = PageTableEntry::PRESENT
+                    | PageTableEntry::WRITABLE
+                    | PageTableEntry::USER_ACCESSIBLE;
+                vmem::map_page(page_addr, frame, flags).expect("Failed to map user heap");
+            }
+        }
+    }
+
+    crate::sched::spawn_userspace_thread(10, entry_point, user_stack_top);
 }

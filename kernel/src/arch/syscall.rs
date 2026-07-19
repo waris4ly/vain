@@ -98,21 +98,7 @@ pub fn set_syscall_kernel_stack(stack: u64) {
 }
 
 extern "C" fn syscall_handler(sys_num: u64, arg1: u64, arg2: u64, arg3: u64) -> u64 {
-    crate::println!(
-        "[VAIN SYSCALL] Number: {}, Arg1: {}, Arg2: {}, Arg3: {}",
-        sys_num,
-        arg1,
-        arg2,
-        arg3
-    );
-
-    match sys_num {
-        1 => {
-            crate::println!("  => SYS_LOG: Hello from Userspace!");
-            0
-        }
-        _ => !0,
-    }
+    crate::syscall::dispatch::dispatch_syscall(sys_num, arg1, arg2, arg3)
 }
 
 pub unsafe fn transition_to_user(entry_point: u64, user_stack: u64) -> ! {

@@ -16,6 +16,16 @@ pub fn spawn_kernel_thread(priority: u8, entry: extern "C" fn() -> !, stack_top:
     RUN_QUEUE.lock().enqueue(tcb);
 }
 
+pub fn spawn_userspace_thread(priority: u8, user_entry: u64, user_stack: u64) {
+    // Allocate a kernel stack for this thread (16KB)
+    let mut kernel_stack = alloc::vec::Vec::<u8>::with_capacity(16384);
+    let kernel_stack_top = kernel_stack.as_ptr() as u64 + 16384;
+    core::mem::forget(kernel_stack); // Leak the stack for now
+
+    let tcb = Box::new(ThreadControlBlock::new_userspace(priority, user_entry, user_stack, kernel_stack_top));
+    RUN_QUEUE.lock().enqueue(tcb);
+}
+
 pub fn schedule() {
     let mut rq = RUN_QUEUE.lock();
     if let Some(next_thread) = rq.pick_next() {
@@ -43,6 +53,7 @@ pub fn schedule() {
         let next_context = next_thread.context;
 
         // Put the incoming thread into the current slot
+        crate::arch::syscall::set_syscall_kernel_stack(next_thread.stack_top);
         *current_lock = Some(next_thread);
 
         // Drop locks symmetrically before context switch
@@ -61,6 +72,7 @@ pub fn schedule_blocked(prev_context_ptr: *mut *mut ThreadContext) {
         let mut current_lock = CURRENT_THREAD.lock();
         
         let next_context = next_thread.context;
+        crate::arch::syscall::set_syscall_kernel_stack(next_thread.stack_top);
         
         *current_lock = Some(next_thread);
         
