@@ -12,6 +12,7 @@ mod boot;
 mod console;
 mod mm;
 mod process;
+mod sched;
 mod sync;
 
 use core::fmt::Write;
@@ -46,27 +47,43 @@ fn kernel_main() -> ! {
     arch::syscall::set_syscall_kernel_stack(kernel_stack_top);
     core::mem::forget(kernel_stack);
 
-    println!("[VAIN] Loading userspace init...");
-    let entry = process::load_init();
+    println!("[VAIN] Spawning kernel threads...");
 
-    // Allocate a user stack
-    // Ideally we would map physical frames to a high user address like 0x80000000.
-    // Let's just do it cleanly via page tables.
-    let user_stack_top = 0x8000_0000;
-    for page in 0..4 {
-        // 16KB stack
-        let frame = mm::frame_alloc::alloc_frame().unwrap();
-        let flags = arch::paging::PageTableEntry::PRESENT
-            | arch::paging::PageTableEntry::WRITABLE
-            | arch::paging::PageTableEntry::USER_ACCESSIBLE;
-        unsafe {
-            mm::vmem::map_page(user_stack_top - (page + 1) * 4096, frame, flags).unwrap();
+    // Spawn Thread A
+    let stack_a = alloc::vec::Vec::<u8>::with_capacity(16384);
+    let stack_top_a = stack_a.as_ptr() as u64 + 16384;
+    core::mem::forget(stack_a);
+    sched::spawn_kernel_thread(10, thread_a, stack_top_a);
+
+    // Spawn Thread B
+    let stack_b = alloc::vec::Vec::<u8>::with_capacity(16384);
+    let stack_top_b = stack_b.as_ptr() as u64 + 16384;
+    core::mem::forget(stack_b);
+    sched::spawn_kernel_thread(10, thread_b, stack_top_b);
+
+    println!("[VAIN] Starting scheduler...");
+    sched::schedule();
+
+    unreachable!("Scheduler should not return");
+}
+
+extern "C" fn thread_a() -> ! {
+    loop {
+        crate::print!("A");
+        // Waste time to slow down the loop
+        for _ in 0..10_000_000 {
+            core::hint::spin_loop();
         }
     }
+}
 
-    println!("[VAIN] Transitioning to Ring 3 (entry: {:#x})...", entry);
-    unsafe {
-        arch::syscall::transition_to_user(entry, user_stack_top);
+extern "C" fn thread_b() -> ! {
+    loop {
+        crate::print!("B");
+        // Waste time to slow down the loop
+        for _ in 0..10_000_000 {
+            core::hint::spin_loop();
+        }
     }
 }
 

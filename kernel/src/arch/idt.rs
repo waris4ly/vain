@@ -126,16 +126,8 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: ExceptionStackFrame, e
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: ExceptionStackFrame) {
-    // Just print a dot for now, or a tick. Let's not print a dot on every tick because it spams the console.
-    // Instead, we can maintain a tick count and print it every 100 ticks or so.
-    unsafe {
-        static mut TICKS: usize = 0;
-        TICKS += 1;
-        if TICKS % 10 == 0 {
-            crate::print!(".");
-        }
-    }
     crate::arch::apic::end_of_interrupt();
+    crate::sched::schedule();
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: ExceptionStackFrame) {
